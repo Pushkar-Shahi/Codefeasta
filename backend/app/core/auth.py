@@ -6,7 +6,6 @@ AUTH_MODE=jwt verifies an HS256 bearer token carrying {"sub", "name", "role"}.
 """
 
 import base64
-import hashlib
 import hmac
 import json
 import time
@@ -78,7 +77,7 @@ def _verify_jwt(token: str, secret: str) -> dict:
         header = json.loads(_b64url_decode(header_b64))
         if header.get("alg") != "HS256":
             raise ValueError("unsupported alg")
-        expected = hmac.new(secret.encode(), f"{header_b64}.{payload_b64}".encode(), hashlib.sha256).digest()
+        expected = hmac.digest(secret.encode(), f"{header_b64}.{payload_b64}".encode(), "sha256")
         if not hmac.compare_digest(expected, _b64url_decode(sig_b64)):
             raise ValueError("bad signature")
         payload = json.loads(_b64url_decode(payload_b64))

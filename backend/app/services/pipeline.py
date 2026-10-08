@@ -8,6 +8,7 @@ stage states, which the SSE endpoint streams.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import time
 from dataclasses import dataclass, field
@@ -569,7 +570,7 @@ async def run_pipeline(run_id: str) -> None:
         current = name
         set_stage(run_id, name, "active", status="running")
         t0 = time.perf_counter()
-        count = await fn(*args) if asyncio.iscoroutinefunction(fn) else await asyncio.to_thread(fn, *args)
+        count = await fn(*args) if inspect.iscoroutinefunction(fn) else await asyncio.to_thread(fn, *args)
         set_stage(run_id, name, "done", count=count, ms=int((time.perf_counter() - t0) * 1000))
 
     try:

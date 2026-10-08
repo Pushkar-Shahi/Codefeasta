@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, File, Form, Query, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.api.routers import Router
@@ -117,14 +117,19 @@ def audit(actor: str | None = None, q: str | None = None, from_: str | None = Qu
         stmt = stmt.where(AuditRow.ts >= from_)
     if to:
         stmt = stmt.where(AuditRow.ts <= (to if "T" in to else f"{to}T23:59:59.999Z"))
-    rows = db.execute(stmt).scalars()
     needle = (q or "").strip().lower()
-    out = []
-    for a in rows:
-        if needle and needle not in f"{a.action} {a.target} {a.actor_name} {a.run_id or ''} {json.dumps(a.after if a.after is not None else '', ensure_ascii=False)}".lower():
-            continue
-        out.append(to_entry(a))
-    return out
+    if needle:
+        like = f"%{needle}%"
+        stmt = stmt.where(
+            or_(
+                AuditRow.action.ilike(like),
+                AuditRow.target.ilike(like),
+                AuditRow.actor_name.ilike(like),
+                AuditRow.run_id.ilike(like),
+            )
+        )
+    rows = db.execute(stmt).scalars()
+    return [to_entry(a) for a in rows]
 
 
 @router.get("/audit/verify")

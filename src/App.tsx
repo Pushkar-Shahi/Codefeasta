@@ -11,7 +11,8 @@ export function makeQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        staleTime: 20_000,
+        staleTime: 60_000,        // 60s — data doesn't change by the second
+        gcTime: 5 * 60_000,       // keep unused queries in cache for 5 min for fast back-navigation
         refetchOnWindowFocus: false,
         // Retry transient failures once; never retry 4xx.
         retry: (count, e) => !(e instanceof ApiError && e.status >= 400 && e.status < 500) && count < 1,

@@ -8,10 +8,10 @@ from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from app.core.money import ZERO, D
-from app.db.models import AuditRow, CommentRow, FindingRow, RunRow, TxnRow
+from app.db.models import AuditRow, CommentRow, FindingRow, PairRow, RunRow, TxnRow
 from app.normalize.fuzzy import js_round, vendor_similarity
 from app.schemas import (
     CATEGORIES,
@@ -284,9 +284,49 @@ def review_queue(db: Session) -> list[ReviewItem]:
 def dashboard(db: Session) -> DashboardData:
     now = datetime.now(UTC)
     runs = list(db.execute(select(RunRow)).scalars())
-    views = []
-    for r in runs:
-        views.append((r, run_view(load_run(db, r, lite=True))))
+    if not runs:
+        return DashboardData(
+            runs_this_month=0, auto_match_rate=0, open_anomalies=0,
+            pending_reviews=0, unreconciled_amount=ZERO, avg_hours_saved=0,
+            trend=[], anomalies_by_month=[], attention=[],
+        )
+
+    run_ids = [r.id for r in runs]
+
+    # Batch-load all txns, pairs, findings in 3 queries instead of 3N
+    all_txns: dict[str, list[TxnRow]] = defaultdict(list)
+    for t in db.execute(
+        select(TxnRow).where(TxnRow.run_id.in_(run_ids))
+        .options(defer(TxnRow.raw_row))
+        .order_by(TxnRow.ord, TxnRow.pk)
+    ).scalars():
+        all_txns[t.run_id].append(t)
+
+    all_pairs: dict[str, list[PairRow]] = defaultdict(list)
+    for p in db.execute(
+        select(PairRow).where(PairRow.run_id.in_(run_ids)).order_by(PairRow.ord, PairRow.created_at)
+    ).scalars():
+        all_pairs[p.run_id].append(p)
+
+    all_findings: dict[str, list[FindingRow]] = defaultdict(list)
+    for f in db.execute(
+        select(FindingRow).where(FindingRow.run_id.in_(run_ids)).order_by(FindingRow.ord, FindingRow.id)
+    ).scalars():
+        all_findings[f.run_id].append(f)
+
+    def make_rd(r: RunRow) -> RunData:
+        rd = RunData(run=r)
+        for t in all_txns.get(r.id, []):
+            if t.external:
+                rd.external[t.id] = t
+            else:
+                rd.txns[t.id] = t
+                (rd.bank_ids if t.source == "bank" else rd.ledger_ids).append(t.id)
+        rd.pairs = all_pairs.get(r.id, [])
+        rd.findings = all_findings.get(r.id, [])
+        return rd
+
+    views = [(r, run_view(make_rd(r))) for r in runs]
     ok = [(r, v) for r, v in views if v.status not in ("failed", "running", "queued")]
     ok.sort(key=lambda x: (x[1].period, x[1].created_at))
     by_period: dict[str, Run] = {}
