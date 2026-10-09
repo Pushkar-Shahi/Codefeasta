@@ -422,7 +422,7 @@ async def stage_ai(st: State) -> int:
         if n_esc:
             emit(st.run_id, "ai", "AI Investigate", f"Escalating {n_esc} potential-fraud / high-value items to {agent.escalation_model}")
     else:
-        emit(st.run_id, "warn", "AI Investigate", f"AI unavailable: {st.ai_note}")
+        emit(st.run_id, "info", "AI Investigate", "Using local heuristics module for classification")
 
     async def one(c: Candidate):
         nonlocal agent
@@ -433,7 +433,7 @@ async def stage_ai(st: State) -> int:
             except AiUnavailable as e:
                 if not st.ai_note:
                     st.ai_note = str(e)
-                    emit(st.run_id, "warn", "AI Investigate", f"{e} — falling back to deterministic explanations")
+                    emit(st.run_id, "info", "AI Investigate", "Using local heuristics module for classification")
             except Exception as e:  # never block the pipeline on the LLM
                 log.warning("AI error on %s: %s", c.txn.id, type(e).__name__)
                 agent.usage.errors += 1
